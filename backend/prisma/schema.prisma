@@ -1,0 +1,165 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id       String   @id @default(cuid())
+  email    String   @unique
+  password String
+  name     String
+  role     String   @default("DRIVER") // ADMIN, TRANSPORTER, DRIVER
+  phone    String?
+  avatar   String?
+
+  // Role-specific fields
+  companyName   String? // For TRANSPORTER
+  licenseNumber String? @unique // For DRIVER
+  licenseExpiry DateTime? // For DRIVER
+  assignedVehicleId String? // For DRIVER
+
+  // Relationships
+  assignedVehicle Vehicle?       @relation("AssignedDriver", fields: [assignedVehicleId], references: [id])
+  createdTrips    Trip[]         @relation("CreatedBy")
+  assignedTrips   Trip[]         @relation("AssignedTo")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("users")
+}
+
+model Vehicle {
+  id                 String   @id @default(cuid())
+  registrationNumber String   @unique
+  make               String
+  model              String
+  year               Int
+  vin                String   @unique
+  status             String   @default("ACTIVE") // ACTIVE, INACTIVE, IN_MAINTENANCE, RETIRED
+  fuelType           String?
+  capacity           Float?
+  currentLocation    String? // JSON {lat, lng, timestamp}
+  fuelLevel          Float? // Percentage 0-100
+  odometer           Float? // Total kilometers
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relationships
+  assignedDriver  User[]        @relation("AssignedDriver")
+  routes          Route[]
+  maintenance     Maintenance[]
+  alerts          Alert[]
+  trips           Trip[]
+
+  @@map("vehicles")
+}
+
+model Trip {
+  id         String   @id @default(cuid())
+  tripNumber String   @unique
+
+  // Assignment
+  createdById String
+  createdBy   User    @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo  User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
+  vehicleId   String
+  vehicle     Vehicle @relation(fields: [vehicleId], references: [id])
+
+  // Route details
+  origin         String
+  destination    String
+  waypoints      String? // JSON array of intermediate stops
+  optimizedRoute String? // JSON from route optimizer API
+  distance       Float   @default(0) // kilometers
+  estimatedTime  Int     @default(0) // minutes
+  estimatedFuel  Float   @default(0) // liters
+
+  // Cargo
+  cargoType        String?
+  cargoWeight      Float? // kg
+  specialInstructions String?
+
+  // Status tracking
+  status          String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, IN_PROGRESS, COMPLETED, CANCELLED
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+  rejectionReason String?
+
+  // Real-time tracking
+  currentLocation String? // JSON {lat, lng}
+  completionProof String? // Image URL or signature
+  
+  // Route relationship
+  routeId String?
+  route   Route?  @relation(fields: [routeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("trips")
+}
+
+model Route {
+  id                    String   @id @default(cuid())
+  vehicleId             String
+  vehicle               Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  startTime             DateTime
+  endTime               DateTime?
+  compressedCoordinates String // JSON string
+  rawCoordinates        String? // JSON string
+  distance              Float    @default(0)
+  fuelConsumed          Float    @default(0)
+  averageSpeed          Float    @default(0)
+  maxSpeed              Float    @default(0)
+  idleTime              Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  trips Trip[]
+
+  @@map("routes")
+}
+
+model Maintenance {
+  id            String   @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type          String // ROUTINE, PREVENTIVE, REPAIR, INSPECTION, EMERGENCY
+  description   String
+  scheduledDate DateTime
+  completedDate DateTime?
+  cost          Float    @default(0)
+  mileage       Float?
+  status        String   @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED, OVERDUE
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("maintenance")
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type        String // SPEEDING, UNAUTHORIZED_STOP, ROUTE_DEVIATION, MAINTENANCE_DUE, etc.
+  severity    String // LOW, MEDIUM, HIGH, CRITICAL
+  title       String
+  description String
+  status      String   @default("ACTIVE") // ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED
+  timestamp   DateTime @default(now())
+  resolvedAt  DateTime?
+  metadata    String? // JSON string
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("alerts")
+}
